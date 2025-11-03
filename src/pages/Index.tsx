@@ -7,8 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/hooks/use-toast';
 import Icon from '@/components/ui/icon';
 
-const API_URL = 'https://functions.poehali.dev/6819fc20-6871-4628-b2c6-75f859ab9b84';
 const PASSWORD = 'eashop25';
+const STORAGE_KEY = 'orders_data';
 
 interface Order {
   id: number;
@@ -43,22 +43,20 @@ const Index = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchOrders();
+      loadOrders();
     }
   }, [isAuthenticated]);
 
-  const fetchOrders = async () => {
-    try {
-      const response = await fetch(API_URL);
-      const data = await response.json();
-      setOrders(data.orders);
-    } catch (error) {
-      toast({
-        title: 'Ошибка',
-        description: 'Не удалось загрузить заказы',
-        variant: 'destructive'
-      });
+  const loadOrders = () => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      setOrders(JSON.parse(stored));
     }
+  };
+
+  const saveOrders = (newOrders: Order[]) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newOrders));
+    setOrders(newOrders);
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -90,68 +88,80 @@ const Index = () => {
     setProcessingMessage('Запрос обрабатывается...');
     setShowSuccessDialog(true);
 
-    setTimeout(async () => {
-      try {
-        await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
-        });
+    setTimeout(() => {
+      const newOrder: Order = {
+        id: Date.now(),
+        ...formData,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
 
-        setProcessingMessage('Заявка создана');
-        
-        setTimeout(() => {
-          setShowSuccessDialog(false);
-          setFormData({ first_name: '', last_name: '', phone: '', telegram: '', uid: '', service_description: '' });
-          fetchOrders();
-        }, 1500);
-      } catch (error) {
+      saveOrders([...orders, newOrder]);
+      setProcessingMessage('Заявка создана');
+      
+      setTimeout(() => {
         setShowSuccessDialog(false);
-        toast({
-          title: 'Ошибка',
-          description: 'Не удалось создать заказ',
-          variant: 'destructive'
-        });
-      }
+        setFormData({ first_name: '', last_name: '', phone: '', telegram: '', uid: '', service_description: '' });
+      }, 1500);
     }, 2000);
   };
 
-  const updateOrderStatus = async (orderId: number, newStatus: string) => {
-    try {
-      await fetch(API_URL, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: orderId, status: newStatus })
-      });
-      fetchOrders();
-    } catch (error) {
-      toast({
-        title: 'Ошибка',
-        description: 'Не удалось обновить статус',
-        variant: 'destructive'
-      });
-    }
+  const updateOrderStatus = (orderId: number, newStatus: string) => {
+    const updatedOrders = orders.map(order =>
+      order.id === orderId
+        ? { ...order, status: newStatus, updated_at: new Date().toISOString() }
+        : order
+    );
+    saveOrders(updatedOrders);
   };
 
-  const deleteOrder = async (orderId: number) => {
-    try {
-      await fetch(API_URL, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: orderId })
-      });
-      toast({
-        title: 'Успешно',
-        description: 'Заказ удалён'
-      });
-      fetchOrders();
-    } catch (error) {
-      toast({
-        title: 'Ошибка',
-        description: 'Не удалось удалить заказ',
-        variant: 'destructive'
-      });
-    }
+  const deleteOrder = (orderId: number) => {
+    const updatedOrders = orders.filter(order => order.id !== orderId);
+    saveOrders(updatedOrders);
+    toast({
+      title: 'Успешно',
+      description: 'Заказ удалён'
+    });
+  };
+
+  const exportOrders = () => {
+    const dataStr = JSON.stringify(orders, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `orders_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast({
+      title: 'Успешно',
+      description: 'Заказы экспортированы'
+    });
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const importedOrders = JSON.parse(event.target?.result as string);
+        saveOrders(importedOrders);
+        toast({
+          title: 'Успешно',
+          description: `Импортировано ${importedOrders.length} заказов`
+        });
+      } catch (error) {
+        toast({
+          title: 'Ошибка',
+          description: 'Не удалось импортировать файл',
+          variant: 'destructive'
+        });
+      }
+    };
+    reader.readAsText(file);
   };
 
   const getStatusButtons = (order: Order) => {
@@ -263,84 +273,115 @@ const Index = () => {
             <h1 className="text-3xl font-bold">Заказы</h1>
             <p className="text-muted-foreground mt-1">Управление заказами</p>
           </div>
-          <Button
-            onClick={() => setShowCreateDialog(true)}
-            className="bg-primary hover:bg-primary/90 text-white rounded-full px-6 h-11"
-          >
-            <Icon name="Plus" size={20} className="mr-2" />
-            Добавить
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={exportOrders}
+              variant="outline"
+              className="rounded-full"
+            >
+              <Icon name="Download" size={18} className="mr-2" />
+              Экспорт
+            </Button>
+            <Button
+              onClick={() => document.getElementById('import-file')?.click()}
+              variant="outline"
+              className="rounded-full"
+            >
+              <Icon name="Upload" size={18} className="mr-2" />
+              Импорт
+            </Button>
+            <input
+              id="import-file"
+              type="file"
+              accept=".json"
+              onChange={handleImport}
+              className="hidden"
+            />
+            <Button
+              onClick={() => setShowCreateDialog(true)}
+              className="bg-primary hover:bg-primary/90 text-white rounded-full px-6"
+            >
+              <Icon name="Plus" size={18} className="mr-2" />
+              Добавить
+            </Button>
+          </div>
         </div>
 
-        <div className="space-y-4">
-          {orders.map((order) => (
-            <Card key={order.id} className="border-0 shadow-sm bg-card hover:shadow-md transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-lg mb-1">
-                      {order.first_name} {order.last_name || ''}
-                    </h3>
-                    <div className="space-y-1 text-sm text-muted-foreground">
-                      {order.service_description && (
-                        <div className="flex items-center gap-2 mb-2">
-                          <Icon name="Briefcase" size={14} />
-                          <span className="font-medium text-foreground">{order.service_description}</span>
-                        </div>
-                      )}
-                      {order.phone && (
-                        <div className="flex items-center gap-2">
-                          <Icon name="Phone" size={14} />
-                          {order.phone}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <Icon name="Send" size={14} />
-                        {order.telegram}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Icon name="User" size={14} />
-                        UID: {order.uid}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs mt-2">
-                        <Icon name="Clock" size={12} />
+        {orders.length === 0 ? (
+          <Card className="p-12 text-center border-dashed">
+            <Icon name="Package" size={48} className="mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-medium mb-2">Нет заказов</h3>
+            <p className="text-muted-foreground mb-6">Создайте первый заказ</p>
+            <Button
+              onClick={() => setShowCreateDialog(true)}
+              className="bg-primary hover:bg-primary/90 text-white rounded-full"
+            >
+              Создать заказ
+            </Button>
+          </Card>
+        ) : (
+          <div className="grid gap-4">
+            {orders.map((order) => (
+              <Card key={order.id} className="overflow-hidden border-0 shadow-sm">
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold mb-1">
+                        {order.first_name} {order.last_name}
+                      </h3>
+                      <div className="text-xs text-muted-foreground">
                         {formatDateTime(order.created_at)}
                       </div>
                     </div>
+                    <Button
+                      onClick={() => deleteOrder(order.id)}
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Icon name="Trash2" size={18} />
+                    </Button>
                   </div>
-                  <Button
-                    onClick={() => deleteOrder(order.id)}
-                    variant="ghost"
-                    size="icon"
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Icon name="Trash2" size={18} />
-                  </Button>
-                </div>
-                <div className="pt-4 border-t border-border">
-                  {getStatusButtons(order)}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
 
-          {orders.length === 0 && (
-            <div className="text-center py-16">
-              <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-                <Icon name="Package" size={36} className="text-muted-foreground" />
-              </div>
-              <p className="text-muted-foreground">Пока нет заказов</p>
-            </div>
-          )}
-        </div>
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    {order.service_description && (
+                      <div className="flex items-center gap-2 mb-2">
+                        <Icon name="Briefcase" size={14} />
+                        <span className="font-medium text-foreground">{order.service_description}</span>
+                      </div>
+                    )}
+                    {order.phone && (
+                      <div className="flex items-center gap-2">
+                        <Icon name="Phone" size={14} />
+                        {order.phone}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Icon name="Send" size={14} />
+                      {order.telegram}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Icon name="User" size={14} />
+                      UID: {order.uid}
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-border mt-4">
+                    {getStatusButtons(order)}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-md rounded-3xl">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-semibold">Новый заказ</DialogTitle>
+            <DialogTitle className="text-xl">Новый заказ</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleCreateOrder} className="space-y-4 pt-4">
+          <form onSubmit={handleCreateOrder} className="space-y-4 mt-4">
             <div>
               <Label htmlFor="first_name" className="text-sm font-medium">
                 Имя <span className="text-destructive">*</span>
@@ -355,7 +396,9 @@ const Index = () => {
               />
             </div>
             <div>
-              <Label htmlFor="last_name" className="text-sm font-medium">Фамилия</Label>
+              <Label htmlFor="last_name" className="text-sm font-medium">
+                Фамилия
+              </Label>
               <Input
                 id="last_name"
                 value={formData.last_name}
@@ -365,10 +408,11 @@ const Index = () => {
               />
             </div>
             <div>
-              <Label htmlFor="phone" className="text-sm font-medium">Номер телефона</Label>
+              <Label htmlFor="phone" className="text-sm font-medium">
+                Телефон
+              </Label>
               <Input
                 id="phone"
-                type="tel"
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 className="mt-1.5 h-12 rounded-xl"
@@ -424,12 +468,16 @@ const Index = () => {
       </Dialog>
 
       <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
-        <DialogContent className="max-w-sm rounded-3xl text-center">
-          <div className="py-8">
+        <DialogContent className="sm:max-w-sm">
+          <div className="text-center py-6">
             <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Icon name="Check" size={32} className="text-primary" />
+              {processingMessage === 'Запрос обрабатывается...' ? (
+                <Icon name="Loader2" size={32} className="text-primary animate-spin" />
+              ) : (
+                <Icon name="Check" size={32} className="text-primary" />
+              )}
             </div>
-            <p className="text-xl font-semibold">{processingMessage}</p>
+            <p className="text-lg font-medium">{processingMessage}</p>
           </div>
         </DialogContent>
       </Dialog>
