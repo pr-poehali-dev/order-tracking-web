@@ -17,6 +17,7 @@ interface Order {
   phone?: string;
   telegram: string;
   uid: string;
+  service_description?: string;
   status: string;
   created_at: string;
   updated_at: string;
@@ -36,7 +37,8 @@ const Index = () => {
     last_name: '',
     phone: '',
     telegram: '',
-    uid: ''
+    uid: '',
+    service_description: ''
   });
 
   useEffect(() => {
@@ -100,7 +102,7 @@ const Index = () => {
         
         setTimeout(() => {
           setShowSuccessDialog(false);
-          setFormData({ first_name: '', last_name: '', phone: '', telegram: '', uid: '' });
+          setFormData({ first_name: '', last_name: '', phone: '', telegram: '', uid: '', service_description: '' });
           fetchOrders();
         }, 1500);
       } catch (error) {
@@ -126,6 +128,27 @@ const Index = () => {
       toast({
         title: 'Ошибка',
         description: 'Не удалось обновить статус',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const deleteOrder = async (orderId: number) => {
+    try {
+      await fetch(API_URL, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: orderId })
+      });
+      toast({
+        title: 'Успешно',
+        description: 'Заказ удалён'
+      });
+      fetchOrders();
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось удалить заказ',
         variant: 'destructive'
       });
     }
@@ -259,6 +282,12 @@ const Index = () => {
                       {order.first_name} {order.last_name || ''}
                     </h3>
                     <div className="space-y-1 text-sm text-muted-foreground">
+                      {order.service_description && (
+                        <div className="flex items-center gap-2 mb-2">
+                          <Icon name="Briefcase" size={14} />
+                          <span className="font-medium text-foreground">{order.service_description}</span>
+                        </div>
+                      )}
                       {order.phone && (
                         <div className="flex items-center gap-2">
                           <Icon name="Phone" size={14} />
@@ -279,6 +308,14 @@ const Index = () => {
                       </div>
                     </div>
                   </div>
+                  <Button
+                    onClick={() => deleteOrder(order.id)}
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <Icon name="Trash2" size={18} />
+                  </Button>
                 </div>
                 <div className="pt-4 border-t border-border">
                   {getStatusButtons(order)}
@@ -362,6 +399,18 @@ const Index = () => {
                 className="mt-1.5 h-12 rounded-xl"
                 placeholder="Введите UID"
                 required
+              />
+            </div>
+            <div>
+              <Label htmlFor="service_description" className="text-sm font-medium">
+                Оказание услуги
+              </Label>
+              <Input
+                id="service_description"
+                value={formData.service_description}
+                onChange={(e) => setFormData({ ...formData, service_description: e.target.value })}
+                className="mt-1.5 h-12 rounded-xl"
+                placeholder="Описание услуги"
               />
             </div>
             <Button

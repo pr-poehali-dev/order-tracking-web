@@ -17,11 +17,25 @@
       "body": {
         "first_name": "Иван",
         "telegram": "@test_user",
-        "uid": "UID12345"
+        "uid": "UID12345",
+        "service_description": "Тестовая услуга"
       },
       "expectedStatus": 201,
       "expectedBody": {
         "id": "number",
+        "message": "string"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Delete order",
+      "method": "DELETE",
+      "path": "/",
+      "body": {
+        "id": 1
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
         "message": "string"
       },
       "bodyMatcher": "partial"

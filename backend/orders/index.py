@@ -7,7 +7,7 @@ from psycopg2.extras import RealDictCursor
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     '''
-    Business: Manages orders - create, list, and update order status
+    Business: Manages orders - create, list, update, and delete orders
     Args: event with httpMethod, body, queryStringParameters
     Returns: HTTP response with orders data or success message
     '''
@@ -18,7 +18,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'statusCode': 200,
             'headers': {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
                 'Access-Control-Allow-Headers': 'Content-Type, X-User-Id',
                 'Access-Control-Max-Age': '86400'
             },
@@ -60,8 +60,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             cur = conn.cursor()
             cur.execute(
-                "INSERT INTO orders (first_name, last_name, phone, telegram, uid, status) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-                (body_data['first_name'], body_data.get('last_name'), body_data.get('phone'), body_data['telegram'], body_data['uid'], 'pending')
+                "INSERT INTO orders (first_name, last_name, phone, telegram, uid, service_description, status) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (body_data['first_name'], body_data.get('last_name'), body_data.get('phone'), body_data['telegram'], body_data['uid'], body_data.get('service_description'), 'pending')
             )
             order_id = cur.fetchone()[0]
             conn.commit()
@@ -98,6 +98,25 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 },
                 'isBase64Encoded': False,
                 'body': json.dumps({'message': 'Order updated'})
+            }
+        
+        if method == 'DELETE':
+            body_data = json.loads(event.get('body', '{}'))
+            order_id = body_data.get('id')
+            
+            cur = conn.cursor()
+            cur.execute("DELETE FROM orders WHERE id = %s", (order_id,))
+            conn.commit()
+            cur.close()
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'isBase64Encoded': False,
+                'body': json.dumps({'message': 'Order deleted'})
             }
         
         return {
